@@ -1,5 +1,7 @@
 # macos-appearance.nvim
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Automatically synchronize Neovim with the current macOS light or dark appearance.
 
 The plugin listens to `~/Library/Preferences/.GlobalPreferences.plist` with `vim.uv.new_fs_event()`.
