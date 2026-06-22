@@ -1,5 +1,10 @@
 local M = {}
 
+-- Track which appearance was last applied by the plugin so that
+-- base46.theme can be restored after load_all_highlights without
+-- breaking the "did the system appearance actually change?" check.
+local last_appearance = nil
+
 local function config()
   local ok, nvconfig = pcall(require, "nvconfig")
   if not ok or type(nvconfig.base46) ~= "table" then
@@ -28,10 +33,10 @@ end
 
 ---Apply the NvChad theme associated with a macOS appearance.
 ---
----Only modifies nvconfig.base46 in memory; never writes to chadrc.lua.
+---Temporarily sets base46.theme to the system-matching theme while
+---highlights are compiled and applied, then restores the original
+---value so that nvconfig.base46 always reflects chadrc.lua.
 ---Manual theme toggles are left to NvChad's native toggle_theme.
----On the next system appearance change (or plugin restart) the plugin
----will apply the system-matching theme again.
 ---
 ---@param appearance "dark"|"light"
 ---@return boolean changed
@@ -39,6 +44,10 @@ end
 function M.apply(appearance)
   if appearance ~= "dark" and appearance ~= "light" then
     return false, "appearance must be 'dark' or 'light'"
+  end
+
+  if last_appearance == appearance then
+    return false
   end
 
   local base46, err = config()
@@ -49,10 +58,10 @@ function M.apply(appearance)
   local theme = appearance == "dark" and base46.theme_toggle[2] or base46.theme_toggle[1]
   update_icon(base46, theme)
 
-  if base46.theme == theme then
-    return false
-  end
-
+  -- Temporarily set the system-matching theme so that load_all_highlights
+  -- compiles the right colors.  Restore afterwards so that nvconfig always
+  -- matches chadrc.lua — this prevents any downstream code from syncing the
+  -- in-memory value back to the file.
   local previous = base46.theme
   base46.theme = theme
 
@@ -67,6 +76,11 @@ function M.apply(appearance)
     base46.theme = previous
     return false, tostring(load_err)
   end
+
+  -- Highlights are now applied via compiled cache files.  Restore the
+  -- original theme so that nvconfig stays in sync with chadrc.lua.
+  base46.theme = previous
+  last_appearance = appearance
 
   return true
 end

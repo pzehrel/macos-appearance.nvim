@@ -70,23 +70,33 @@ test("NvChad adapter maps theme_toggle and avoids redundant reloads", function()
   }
 
   local adapter = require "macos-appearance.adapters.nvchad"
-  local changed, err = adapter.apply "light"
-  equal(changed, false)
-  equal(err, nil)
-  equal(loads, 0)
 
-  -- apply("dark") changes highlights and updates base46.theme in memory.
-  changed, err = adapter.apply "dark"
+  -- apply("dark") changes highlights but restores base46.theme afterwards
+  -- so that nvconfig never diverges from chadrc.lua.
+  local changed, err = adapter.apply "dark"
   equal(changed, true)
   equal(err, nil)
-  equal(base46_config.theme, "dark-theme")
+  equal(base46_config.theme, "light-theme")
   equal(loads, 1)
   equal(vim.g.icon_toggled, true)
 
-  -- apply("dark") again is a no-op.
+  -- Same appearance again is a no-op (tracked by last_appearance).
   changed, err = adapter.apply "dark"
   equal(changed, false)
   equal(loads, 1)
+
+  -- Different appearance triggers a real apply.
+  changed, err = adapter.apply "light"
+  equal(changed, true)
+  equal(err, nil)
+  equal(base46_config.theme, "light-theme")
+  equal(loads, 2)
+  equal(vim.g.icon_toggled, false)
+
+  -- Back to dark — still works after a different appearance.
+  changed, err = adapter.apply "dark"
+  equal(changed, true)
+  equal(loads, 3)
 end)
 
 test("NvChad adapter reports an invalid theme_toggle", function()
