@@ -100,13 +100,6 @@ function M.setup(opts)
   state.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
   state.appearance = nil
 
-  if type(state.options.adapter.install_toggle) == "function" then
-    local _, err = state.options.adapter.install_toggle()
-    if err then
-      notify(err)
-    end
-  end
-
   local _, sync_err = M.sync()
   if sync_err then
     return false, sync_err

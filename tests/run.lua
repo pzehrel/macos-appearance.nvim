@@ -75,8 +75,7 @@ test("NvChad adapter maps theme_toggle and avoids redundant reloads", function()
   equal(err, nil)
   equal(loads, 0)
 
-  -- apply("dark") should change highlights and update base46.theme
-  -- (the in-memory value is kept in sync for correct toggle behavior).
+  -- apply("dark") changes highlights and updates base46.theme in memory.
   changed, err = adapter.apply "dark"
   equal(changed, true)
   equal(err, nil)
@@ -84,11 +83,10 @@ test("NvChad adapter maps theme_toggle and avoids redundant reloads", function()
   equal(loads, 1)
   equal(vim.g.icon_toggled, true)
 
-  changed, err = adapter.toggle()
-  equal(changed, true)
-  equal(err, nil)
-  equal(base46_config.theme, "light-theme")
-  equal(loads, 2)
+  -- apply("dark") again is a no-op.
+  changed, err = adapter.apply "dark"
+  equal(changed, false)
+  equal(loads, 1)
 end)
 
 test("NvChad adapter reports an invalid theme_toggle", function()
@@ -190,10 +188,6 @@ test("setup synchronizes before starting and repeated setup stops the old watche
     end,
   }
   package.loaded["macos-appearance.adapters.nvchad"] = {
-    install_toggle = function()
-      order[#order + 1] = "install-toggle"
-      return true
-    end,
     apply = function(value)
       order[#order + 1] = "apply-" .. value
       return true
@@ -215,12 +209,12 @@ test("setup synchronizes before starting and repeated setup stops the old watche
 
   local plugin = require "macos-appearance"
   plugin.setup { notify = false }
-  equal(table.concat(order, ","), "install-toggle,detect,apply-dark,start")
+  equal(table.concat(order, ","), "detect,apply-dark,start")
 
   order = {}
   plugin.setup { notify = false }
   equal(stop_count, 1)
-  equal(table.concat(order, ","), "install-toggle,detect,apply-dark,start")
+  equal(table.concat(order, ","), "detect,apply-dark,start")
   plugin.stop()
 end)
 

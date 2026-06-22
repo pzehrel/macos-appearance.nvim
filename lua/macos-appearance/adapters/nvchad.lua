@@ -26,7 +26,13 @@ local function update_icon(base46, theme)
   vim.g.toggle_theme_icon = dark and "   " or "   "
 end
 
----Apply the NvChad theme associated with an appearance.
+---Apply the NvChad theme associated with a macOS appearance.
+---
+---Only modifies nvconfig.base46 in memory; never writes to chadrc.lua.
+---Manual theme toggles are left to NvChad's native toggle_theme.
+---On the next system appearance change (or plugin restart) the plugin
+---will apply the system-matching theme again.
+---
 ---@param appearance "dark"|"light"
 ---@return boolean changed
 ---@return string? error
@@ -47,11 +53,6 @@ function M.apply(appearance)
     return false
   end
 
-  -- load_all_highlights internally calls reload_module("base46"), which
-  -- clears package.loaded["base46"] and therefore undoes install_toggle().
-  -- Re-install toggle_theme after highlights are applied so that chadrc.lua
-  -- is never modified through NvChad's original toggle_theme (which calls
-  -- nvchad.utils.replace_word).
   local previous = base46.theme
   base46.theme = theme
 
@@ -65,51 +66,6 @@ function M.apply(appearance)
   if not loaded then
     base46.theme = previous
     return false, tostring(load_err)
-  end
-
-  -- load_all_highlights cleared package.loaded["base46"]; the next
-  -- require will return a fresh module whose toggle_theme still calls
-  -- replace_word.  Re-install the override so the statusline toggle
-  -- button (which calls require('base46').toggle_theme()) never writes
-  -- to chadrc.lua.
-  local _, reinstall_err = M.install_toggle()
-  if reinstall_err then
-    vim.notify(reinstall_err, vim.log.levels.WARN, { title = "macos-appearance.nvim" })
-  end
-
-  return true
-end
-
----Toggle between the two configured themes without modifying chadrc.lua.
----@return boolean changed
----@return string? error
-function M.toggle()
-  local base46, err = config()
-  if not base46 then
-    return false, err
-  end
-
-  if base46.theme ~= base46.theme_toggle[1] and base46.theme ~= base46.theme_toggle[2] then
-    return false, "current theme must be one of nvconfig.base46.theme_toggle"
-  end
-
-  return M.apply(base46.theme == base46.theme_toggle[1] and "dark" or "light")
-end
-
----Keep NvChad's theme toggle button process-local.
----@return boolean installed
----@return string? error
-function M.install_toggle()
-  local ok, base46_module = pcall(require, "base46")
-  if not ok then
-    return false, "NvChad base46 module is unavailable"
-  end
-
-  base46_module.toggle_theme = function()
-    local _, err = M.toggle()
-    if err then
-      vim.notify(err, vim.log.levels.WARN, { title = "macos-appearance.nvim" })
-    end
   end
 
   return true
