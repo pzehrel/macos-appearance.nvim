@@ -36,6 +36,8 @@ end
 ---Temporarily sets base46.theme to the system-matching theme while
 ---highlights are compiled and applied, then restores the original
 ---value so that nvconfig.base46 always reflects chadrc.lua.
+---During the operation replace_word is guarded to prevent any code
+---path (toggle_theme, autocmd cascade, etc.) from writing to chadrc.lua.
 ---Manual theme toggles are left to NvChad's native toggle_theme.
 ---
 ---@param appearance "dark"|"light"
@@ -58,28 +60,43 @@ function M.apply(appearance)
   local theme = appearance == "dark" and base46.theme_toggle[2] or base46.theme_toggle[1]
   update_icon(base46, theme)
 
-  -- Temporarily set the system-matching theme so that load_all_highlights
-  -- compiles the right colors.  Restore afterwards so that nvconfig always
-  -- matches chadrc.lua — this prevents any downstream code from syncing the
-  -- in-memory value back to the file.
+  -- Guard replace_word so that NO code path can write to chadrc.lua
+  -- while we temporarily modify base46.theme for highlight compilation.
+  -- load_all_highlights internally reloads the base46 module, which may
+  -- trigger downstream callbacks that call toggle_theme → replace_word.
+  local ok_utils, nvchad_utils = pcall(require, "nvchad.utils")
+  local saved_replace_word
+  if ok_utils and type(nvchad_utils.replace_word) == "function" then
+    saved_replace_word = nvchad_utils.replace_word
+    nvchad_utils.replace_word = function() end
+  end
+
   local previous = base46.theme
   base46.theme = theme
 
   local ok, base46_module = pcall(require, "base46")
   if not ok or type(base46_module.load_all_highlights) ~= "function" then
     base46.theme = previous
+    if saved_replace_word then
+      nvchad_utils.replace_word = saved_replace_word
+    end
     return false, "NvChad base46 module is unavailable"
   end
 
   local loaded, load_err = pcall(base46_module.load_all_highlights)
   if not loaded then
     base46.theme = previous
+    if saved_replace_word then
+      nvchad_utils.replace_word = saved_replace_word
+    end
     return false, tostring(load_err)
   end
 
-  -- Highlights are now applied via compiled cache files.  Restore the
-  -- original theme so that nvconfig stays in sync with chadrc.lua.
+  -- Highlights applied; restore original theme and replace_word.
   base46.theme = previous
+  if saved_replace_word then
+    nvchad_utils.replace_word = saved_replace_word
+  end
   last_appearance = appearance
 
   return true
