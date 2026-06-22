@@ -49,8 +49,9 @@ function M.apply(appearance)
 
   -- load_all_highlights internally calls reload_module("base46"), which
   -- clears package.loaded["base46"] and therefore undoes install_toggle().
-  -- Restore the original theme value after applying highlights and re-install
-  -- toggle_theme so that chadrc.lua is never modified.
+  -- Re-install toggle_theme after highlights are applied so that chadrc.lua
+  -- is never modified through NvChad's original toggle_theme (which calls
+  -- nvchad.utils.replace_word).
   local previous = base46.theme
   base46.theme = theme
 
@@ -66,13 +67,11 @@ function M.apply(appearance)
     return false, tostring(load_err)
   end
 
-  -- Highlights are now applied via compiled cache files; restore the
-  -- original theme in nvconfig so that chadrc.lua stays untouched.
-  base46.theme = previous
-
-  -- load_all_highlights cleared package.loaded["base46"], so the next
+  -- load_all_highlights cleared package.loaded["base46"]; the next
   -- require will return a fresh module whose toggle_theme still calls
-  -- replace_word.  Re-install the override.
+  -- replace_word.  Re-install the override so the statusline toggle
+  -- button (which calls require('base46').toggle_theme()) never writes
+  -- to chadrc.lua.
   local _, reinstall_err = M.install_toggle()
   if reinstall_err then
     vim.notify(reinstall_err, vim.log.levels.WARN, { title = "macos-appearance.nvim" })

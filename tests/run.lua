@@ -75,12 +75,12 @@ test("NvChad adapter maps theme_toggle and avoids redundant reloads", function()
   equal(err, nil)
   equal(loads, 0)
 
-  -- apply("dark") should change highlights but keep base46.theme untouched
-  -- (the original value is restored after load_all_highlights succeeds).
+  -- apply("dark") should change highlights and update base46.theme
+  -- (the in-memory value is kept in sync for correct toggle behavior).
   changed, err = adapter.apply "dark"
   equal(changed, true)
   equal(err, nil)
-  equal(base46_config.theme, "light-theme")
+  equal(base46_config.theme, "dark-theme")
   equal(loads, 1)
   equal(vim.g.icon_toggled, true)
 
