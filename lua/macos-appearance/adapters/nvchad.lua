@@ -64,11 +64,16 @@ function M.apply(appearance)
   -- while we temporarily modify base46.theme for highlight compilation.
   -- load_all_highlights internally reloads the base46 module, which may
   -- trigger downstream callbacks that call toggle_theme → replace_word.
+  -- Use a 500ms grace period after restoration to catch async callbacks.
   local ok_utils, nvchad_utils = pcall(require, "nvchad.utils")
   local saved_replace_word
   if ok_utils and type(nvchad_utils.replace_word) == "function" then
     saved_replace_word = nvchad_utils.replace_word
-    nvchad_utils.replace_word = function() end
+    nvchad_utils.replace_word = function(_old, _new, _filepath)
+      -- DEBUG: trace who is trying to write to chadrc.lua
+      local trace = debug.traceback("replace_word blocked by macos-appearance", 2)
+      vim.notify(trace, vim.log.levels.WARN, { title = "macos-appearance: replace_word BLOCKED" })
+    end
   end
 
   local previous = base46.theme
@@ -92,12 +97,16 @@ function M.apply(appearance)
     return false, tostring(load_err)
   end
 
-  -- Highlights applied; restore original theme and replace_word.
+  -- Highlights applied; restore original theme and replace_word
+  -- after a grace period to catch any async callbacks.
   base46.theme = previous
-  if saved_replace_word then
-    nvchad_utils.replace_word = saved_replace_word
-  end
   last_appearance = appearance
+
+  if saved_replace_word then
+    vim.defer_fn(function()
+      nvchad_utils.replace_word = saved_replace_word
+    end, 500)
+  end
 
   return true
 end
