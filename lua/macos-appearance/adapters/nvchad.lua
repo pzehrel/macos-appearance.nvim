@@ -23,17 +23,19 @@ local function install_replace_word_guard()
 
   local ok, utils = pcall(require, "nvchad.utils")
   if ok then
-    utils.replace_word = function() end -- silent no-op
-  end
-end
-
-local function restore_replace_word()
-  if saved_replace_word == nil then
-    return
-  end
-  local ok, utils = pcall(require, "nvchad.utils")
-  if ok then
-    utils.replace_word = saved_replace_word
+    -- DIAGNOSTIC: permanently block replace_word to determine whether
+    -- chadrc.lua writes go through this function or bypass it.
+    utils.replace_word = function(...)
+      local args = { ... }
+      local msg = string.format(
+        "BLOCKED at %.3fs | old=%s new=%s file=%s",
+        vim.uv.hrtime() / 1e9,
+        tostring(args[1] or "nil"):sub(1, 80),
+        tostring(args[2] or "nil"):sub(1, 80),
+        tostring(args[3] or "nil"):sub(1, 80)
+      )
+      vim.notify(msg, vim.log.levels.WARN, { title = "macos-appearance: replace_word BLOCKED" })
+    end
   end
 end
 
@@ -108,6 +110,7 @@ function M.apply(appearance)
   -- base46.theme for highlight compilation.  load_all_highlights
   -- internally reloads the base46 module, triggering downstream
   -- callbacks that may reach toggle_theme → replace_word.
+  -- DIAGNOSTIC: guard is NOT restored — stays permanent.
   install_replace_word_guard()
 
   local previous = base46.theme
@@ -116,14 +119,12 @@ function M.apply(appearance)
   local ok, base46_module = pcall(require, "base46")
   if not ok or type(base46_module.load_all_highlights) ~= "function" then
     base46.theme = previous
-    restore_replace_word()
     return false, "NvChad base46 module is unavailable"
   end
 
   local loaded, load_err = pcall(base46_module.load_all_highlights)
   if not loaded then
     base46.theme = previous
-    restore_replace_word()
     return false, tostring(load_err)
   end
 
@@ -132,9 +133,14 @@ function M.apply(appearance)
   base46.theme = previous
   last_appearance = appearance
 
-  -- Defer restoration to cover async callbacks that load_all_highlights
-  -- may have scheduled (autocmd cascades, ColorScheme handlers, etc.).
-  vim.defer_fn(restore_replace_word, 500)
+  -- DIAGNOSTIC: replace_word guard is NOT restored — it stays permanent.
+  -- If chadrc.lua is still modified after this, the write bypasses
+  -- replace_word entirely (io.open, shell command, etc.).
+  vim.notify(
+    "applied " .. appearance .. " | replace_word PERMANENTLY blocked",
+    vim.log.levels.INFO,
+    { title = "macos-appearance" }
+  )
 
   return true
 end
