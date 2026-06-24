@@ -204,11 +204,12 @@ test("setup synchronizes before starting and repeated setup stops the old watche
       return "dark"
     end,
   }
-  -- Mock adapter (not auto-registered; user calls listen() explicitly).
+  -- Mock adapter; listen() creates its own augroup.
   package.loaded["macos-appearance.adapters.nvchad"] = {
-    listen = function(group)
+    listen = function()
+      local g = vim.api.nvim_create_augroup("TestNvChad", { clear = true })
       vim.api.nvim_create_autocmd("User", {
-        group = group,
+        group = g,
         pattern = "MacosAppearanceChanged",
         callback = function(ev)
           events[#events + 1] = ev.data.appearance
@@ -234,7 +235,7 @@ test("setup synchronizes before starting and repeated setup stops the old watche
 
   -- User explicitly registers the adapter listener.
   local nvchad = require("macos-appearance.adapters.nvchad")
-  nvchad.listen(vim.api.nvim_create_augroup("TestNvChad", { clear = true }))
+  nvchad.listen()
 
   plugin.setup { notify = false }
   -- setup() syncs, then starts watching.
