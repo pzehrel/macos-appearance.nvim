@@ -48,9 +48,10 @@ function M.sync()
   state.appearance = current
 
   if state.options.callback then
-    local ok, cb_err = pcall(state.options.callback, current)
+    local ok, thrown = pcall(state.options.callback, current)
     if not ok then
-      notify(tostring(cb_err))
+      -- Bypass the notify gate: callback crashes are always shown.
+      vim.notify(tostring(thrown), vim.log.levels.ERROR, { title = "macos-appearance.nvim" })
     end
   end
 
@@ -106,6 +107,16 @@ function M.setup(opts)
   M.stop()
   state.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
   state.appearance = nil
+
+  if not state.options.callback then
+    vim.schedule(function()
+      vim.notify(
+        "No callback configured. Set callback in setup() or listen to User MacosAppearanceChanged event.",
+        vim.log.levels.WARN,
+        { title = "macos-appearance.nvim" }
+      )
+    end)
+  end
 
   local group = vim.api.nvim_create_augroup("MacosAppearance", { clear = true })
   vim.api.nvim_create_autocmd("VimLeavePre", {
