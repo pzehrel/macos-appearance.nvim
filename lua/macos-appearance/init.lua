@@ -97,13 +97,6 @@ function M.setup(opts)
   state.appearance = nil
 
   local group = vim.api.nvim_create_augroup("MacosAppearance", { clear = true })
-
-  -- Register the NvChad adapter as an event listener if available.
-  local ok, nvchad = pcall(require, "macos-appearance.adapters.nvchad")
-  if ok and nvchad.listen then
-    nvchad.listen(group)
-  end
-
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = group,
     callback = M.stop,
