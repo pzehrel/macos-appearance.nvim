@@ -1,15 +1,37 @@
 local M = {}
 
 -- Module-level state ---------------------------------------------------
--- last_appearance tracks the most recently applied macOS appearance so
--- that redundant apply() calls (same appearance twice in a row) can be
--- short-circuited without relying on base46.theme (which the plugin
--- restores after each apply to keep nvconfig in sync with chadrc.lua).
 local last_appearance = nil
-
--- Saved once on first use; never recaptured, so concurrent / overlapping
--- apply() calls cannot accidentally save the no-op guard as "original".
 local saved_replace_word = nil
+local chadrc_path = vim.fn.stdpath("config") .. "/lua/chadrc.lua"
+
+-- DIAGNOSTIC: watch chadrc.lua for ANY modification, independent of mechanism
+local function start_chadrc_watcher()
+  local mtime = vim.uv.fs_stat(chadrc_path) and vim.uv.fs_stat(chadrc_path).mtime.sec or 0
+  -- Log the initial state so we know mtime at plugin load
+  vim.notify(
+    string.format("chadrc.lua mtime at plugin load: %d", mtime),
+    vim.log.levels.INFO,
+    { title = "macos-appearance: INIT" }
+  )
+
+  -- Poll every 500ms to detect changes (fs_event on Lua files is unreliable on macOS)
+  vim.uv.new_timer():start(0, 500, function()
+    local stat = vim.uv.fs_stat(chadrc_path)
+    local new_mtime = stat and stat.mtime.sec or 0
+    if new_mtime ~= mtime and new_mtime > 0 then
+      local trace = debug.traceback("chadrc.lua MODIFIED", 2)
+      vim.notify(
+        string.format("mtime %d → %d\n%s", mtime, new_mtime, trace),
+        vim.log.levels.ERROR,
+        { title = "macos-appearance: FILE CHANGED" }
+      )
+      mtime = new_mtime
+    end
+  end)
+end
+
+start_chadrc_watcher()
 
 -- Replace-word guard ----------------------------------------------------
 
@@ -113,16 +135,9 @@ function M.apply(appearance)
   -- DIAGNOSTIC: guard is NOT restored — stays permanent.
   install_replace_word_guard()
 
-  -- DIAGNOSTIC: also wrap io.open to catch writes that bypass replace_word
-  local chadrc_path = vim.fn.stdpath("config") .. "/lua/chadrc.lua"
-  local original_open = io.open
-  io.open = function(path, mode)
-    if path == chadrc_path and mode == "w" then
-      local trace = debug.traceback("chadrc.lua WRITE via io.open", 2)
-      vim.notify(trace, vim.log.levels.ERROR, { title = "macos-appearance: io.open WRITE" })
-    end
-    return original_open(path, mode)
-  end
+  -- Log mtime before apply to compare with watcher notifications
+  local stat_before = vim.uv.fs_stat(chadrc_path)
+  local mtime_before = stat_before and stat_before.mtime.sec or 0
 
   local previous = base46.theme
   base46.theme = theme
@@ -130,14 +145,12 @@ function M.apply(appearance)
   local ok, base46_module = pcall(require, "base46")
   if not ok or type(base46_module.load_all_highlights) ~= "function" then
     base46.theme = previous
-    io.open = original_open
     return false, "NvChad base46 module is unavailable"
   end
 
   local loaded, load_err = pcall(base46_module.load_all_highlights)
   if not loaded then
     base46.theme = previous
-    io.open = original_open
     return false, tostring(load_err)
   end
 
@@ -146,7 +159,16 @@ function M.apply(appearance)
   base46.theme = previous
   last_appearance = appearance
 
-  io.open = original_open
+  -- Check if chadrc.lua was modified during load_all_highlights
+  local stat_after = vim.uv.fs_stat(chadrc_path)
+  local mtime_after = stat_after and stat_after.mtime.sec or 0
+  if mtime_after ~= mtime_before then
+    vim.notify(
+      string.format("CHANGED during apply! mtime %d → %d", mtime_before, mtime_after),
+      vim.log.levels.ERROR,
+      { title = "macos-appearance: DURING APPLY" }
+    )
+  end
 
   -- DIAGNOSTIC: replace_word guard is NOT restored — it stays permanent.
   -- If chadrc.lua is still modified after this, the write bypasses
