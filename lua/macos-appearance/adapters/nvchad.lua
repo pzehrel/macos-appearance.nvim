@@ -88,16 +88,4 @@ function M.apply(appearance)
   return true
 end
 
----Register this adapter to listen for MacosAppearanceChanged events.
-function M.listen()
-  local group = vim.api.nvim_create_augroup("MacosAppearanceNvChad", { clear = true })
-  vim.api.nvim_create_autocmd("User", {
-    group = group,
-    pattern = "MacosAppearanceChanged",
-    callback = function(ev)
-      M.apply(ev.data.appearance)
-    end,
-  })
-end
-
 return M

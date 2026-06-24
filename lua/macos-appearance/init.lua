@@ -30,6 +30,8 @@ function M.get()
 end
 
 ---Detect and fire User MacosAppearanceChanged if the appearance changed.
+---Calls the user's callback (if set) and always fires the event so that
+---additional listeners can react independently.
 ---@return boolean changed
 ---@return string? error
 function M.sync()
@@ -44,6 +46,14 @@ function M.sync()
   end
 
   state.appearance = current
+
+  if state.options.callback then
+    local ok, cb_err = pcall(state.options.callback, current)
+    if not ok then
+      notify(tostring(cb_err))
+    end
+  end
+
   vim.api.nvim_exec_autocmds("User", {
     pattern = "MacosAppearanceChanged",
     data = { appearance = current },
@@ -86,6 +96,7 @@ end
 ---@field retry_ms? integer
 ---@field path? string
 ---@field notify? boolean
+---@field callback? fun(appearance: "dark"|"light")
 
 ---Synchronize once, then start listening for changes.
 ---@param opts? MacosAppearanceOptions

@@ -192,29 +192,17 @@ test("watcher debounces events, synchronizes, and attaches a fresh handle", func
   vim.schedule = original_schedule
 end)
 
-test("setup synchronizes before starting and repeated setup stops the old watcher", function()
+test("setup calls callback and fires event on appearance change", function()
   unload "macos-appearance"
   local order = {}
   local stop_count = 0
-  local events = {}
+  local callbacks = {}
+  local autocmd_events = {}
 
   package.loaded["macos-appearance.appearance"] = {
     get = function()
       order[#order + 1] = "detect"
       return "dark"
-    end,
-  }
-  -- Mock adapter; listen() creates its own augroup.
-  package.loaded["macos-appearance.adapters.nvchad"] = {
-    listen = function()
-      local g = vim.api.nvim_create_augroup("TestNvChad", { clear = true })
-      vim.api.nvim_create_autocmd("User", {
-        group = g,
-        pattern = "MacosAppearanceChanged",
-        callback = function(ev)
-          events[#events + 1] = ev.data.appearance
-        end,
-      })
     end,
   }
   package.loaded["macos-appearance.watcher"] = {
@@ -233,21 +221,43 @@ test("setup synchronizes before starting and repeated setup stops the old watche
 
   local plugin = require "macos-appearance"
 
-  -- User explicitly registers the adapter listener.
-  local nvchad = require("macos-appearance.adapters.nvchad")
-  nvchad.listen()
+  -- Listen to the event independently (advanced use).
+  local group = vim.api.nvim_create_augroup("TestEvent", { clear = true })
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "MacosAppearanceChanged",
+    callback = function(ev)
+      autocmd_events[#autocmd_events + 1] = ev.data.appearance
+    end,
+  })
 
-  plugin.setup { notify = false }
-  -- setup() syncs, then starts watching.
+  -- User passes adapter.apply as callback.
+  plugin.setup {
+    notify = false,
+    callback = function(appearance)
+      callbacks[#callbacks + 1] = appearance
+    end,
+  }
+
   equal(table.concat(order, ","), "detect,start")
-  equal(events[1], "dark")
+  equal(callbacks[1], "dark")
+  equal(autocmd_events[1], "dark")
 
   order = {}
-  events = {}
-  plugin.setup { notify = false }
+  callbacks = {}
+  autocmd_events = {}
+
+  -- Repeated setup stops the old watcher and syncs again.
+  plugin.setup {
+    notify = false,
+    callback = function(appearance)
+      callbacks[#callbacks + 1] = appearance
+    end,
+  }
   equal(stop_count, 1)
   equal(table.concat(order, ","), "detect,start")
-  equal(events[1], "dark")
+  equal(callbacks[1], "dark")
+  equal(autocmd_events[1], "dark")
   plugin.stop()
 end)
 
