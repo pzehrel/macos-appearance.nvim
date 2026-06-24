@@ -70,37 +70,20 @@ function M.apply(appearance)
   base46.theme = theme
 
   local ok, base46_module = pcall(require, "base46")
-  if not ok then
+  if not ok or type(base46_module.load_all_highlights) ~= "function" then
     base46.theme = previous
     return false, "NvChad base46 module is unavailable"
   end
 
-  -- Call load_all_highlights normally, but temporarily disable its
-  -- internal reload_module("base46") which clears the module cache
-  -- and triggers downstream callbacks that write to chadrc.lua.
-  local ok_reload, plenary_reload = pcall(require, "plenary.reload")
-  local saved_reload
-  if ok_reload and plenary_reload.reload_module then
-    saved_reload = plenary_reload.reload_module
-    plenary_reload.reload_module = function(name, ...)
-      if name ~= "base46" then
-        return saved_reload(name, ...)
-      end
-    end
-  end
-
+  -- Same approach as NvChad's built-in reload_theme: set nvconfig theme
+  -- and call load_all_highlights.  Restore afterwards so nvconfig stays
+  -- in sync with chadrc.lua.
   local loaded, load_err = pcall(base46_module.load_all_highlights)
-
-  if saved_reload then
-    plenary_reload.reload_module = saved_reload
-  end
-
   if not loaded then
     base46.theme = previous
     return false, tostring(load_err)
   end
 
-  -- Restore original theme so nvconfig stays in sync with chadrc.lua.
   base46.theme = previous
   last_appearance = appearance
 
