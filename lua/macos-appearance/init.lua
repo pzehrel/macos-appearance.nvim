@@ -100,12 +100,6 @@ function M.setup(opts)
   state.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
   state.appearance = nil
 
-  -- Reset the adapter's internal tracker so that re-setup forces a
-  -- full sync even when the system appearance hasn't changed.
-  if type(state.options.adapter.reset) == "function" then
-    state.options.adapter.reset()
-  end
-
   local _, sync_err = M.sync()
   if sync_err then
     return false, sync_err
