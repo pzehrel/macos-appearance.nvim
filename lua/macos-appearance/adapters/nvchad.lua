@@ -113,18 +113,31 @@ function M.apply(appearance)
   -- DIAGNOSTIC: guard is NOT restored — stays permanent.
   install_replace_word_guard()
 
+  -- DIAGNOSTIC: also wrap io.open to catch writes that bypass replace_word
+  local chadrc_path = vim.fn.stdpath("config") .. "/lua/chadrc.lua"
+  local original_open = io.open
+  io.open = function(path, mode)
+    if path == chadrc_path and mode == "w" then
+      local trace = debug.traceback("chadrc.lua WRITE via io.open", 2)
+      vim.notify(trace, vim.log.levels.ERROR, { title = "macos-appearance: io.open WRITE" })
+    end
+    return original_open(path, mode)
+  end
+
   local previous = base46.theme
   base46.theme = theme
 
   local ok, base46_module = pcall(require, "base46")
   if not ok or type(base46_module.load_all_highlights) ~= "function" then
     base46.theme = previous
+    io.open = original_open
     return false, "NvChad base46 module is unavailable"
   end
 
   local loaded, load_err = pcall(base46_module.load_all_highlights)
   if not loaded then
     base46.theme = previous
+    io.open = original_open
     return false, tostring(load_err)
   end
 
@@ -132,6 +145,8 @@ function M.apply(appearance)
   -- original theme so that nvconfig stays in sync with chadrc.lua.
   base46.theme = previous
   last_appearance = appearance
+
+  io.open = original_open
 
   -- DIAGNOSTIC: replace_word guard is NOT restored — it stays permanent.
   -- If chadrc.lua is still modified after this, the write bypasses
