@@ -88,4 +88,10 @@ function M.apply(appearance)
   return true
 end
 
+---Reset internal state so the next apply() always reloads highlights,
+---regardless of the last applied appearance.
+function M.reset()
+  last_appearance = nil
+end
+
 return M

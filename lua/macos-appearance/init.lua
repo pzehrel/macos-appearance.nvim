@@ -48,7 +48,9 @@ function M.sync()
   state.appearance = current
 
   if state.options.callback then
-    local ok, thrown = pcall(state.options.callback, current)
+    local cb = state.options.callback
+    local fn = type(cb) == "table" and cb.apply or cb
+    local ok, thrown = pcall(fn, current)
     if not ok then
       -- Bypass the notify gate: callback crashes are always shown.
       vim.notify(tostring(thrown), vim.log.levels.ERROR, { title = "macos-appearance.nvim" })
@@ -107,6 +109,14 @@ function M.setup(opts)
   M.stop()
   state.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
   state.appearance = nil
+
+  -- Reset adapter state so re-setup always performs a full sync.
+  local cb = state.options.callback
+  if type(cb) == "table" and cb.reset then
+    cb.reset()
+  elseif type(cb) == "table" and cb.apply and type(cb.apply.reset) == "function" then
+    cb.apply.reset()
+  end
 
   if not state.options.callback then
     vim.schedule(function()
