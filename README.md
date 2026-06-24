@@ -4,36 +4,88 @@
 
 Automatically synchronize Neovim with the current macOS light or dark appearance.
 
-The plugin listens to `~/Library/Preferences/.GlobalPreferences.plist` with `vim.uv.new_fs_event()`.
-It performs one synchronization during setup, then reacts to file events without periodic polling.
-
-A built-in adapter for NvChad Base46 is included. Users of other theme frameworks provide their own
-callback or listen to the `User MacosAppearanceChanged` event.
+The plugin watches `~/Library/Preferences/.GlobalPreferences.plist` via `vim.uv.new_fs_event()`.
+It syncs once during setup, then reacts to file events — no periodic polling.
 
 ## Requirements
 
 - macOS
-- Neovim 0.10 or newer
+- Neovim 0.10+
 
-## NvChad configuration
+## Installation
 
-The first theme is treated as light and the second as dark:
+```lua
+{
+  "pzehrel/macos-appearance.nvim",
+  event = "UIEnter",
+  config = function()
+    require("macos-appearance").setup {
+      callback = function(appearance)
+        -- your theme-switching logic here
+      end,
+    }
+  end,
+}
+```
+
+`callback` receives `"dark"` or `"light"` whenever the system appearance changes
+(and once during startup). It can be a plain function or an adapter table
+`{ apply = fun(appearance), reset? = fun() }`.
+
+For advanced use, skip `callback` and listen to `User MacosAppearanceChanged`
+with `data = { appearance = "dark" | "light" }`.
+
+## Behavior
+
+During `setup()` the plugin:
+
+1. Detects the current macOS appearance.
+2. Calls `callback` (if set) and fires `User MacosAppearanceChanged`.
+3. Starts watching the plist for changes.
+4. Registers cleanup on `VimLeavePre`.
+
+The plugin never writes to `chadrc.lua` or any other config file.
+File events are debounced at 100 ms (configurable).
+
+## Options
+
+| Option       | Default                                  | Description                              |
+| ---          | ---:                                     | ---                                      |
+| `debounce_ms`| `100`                                    | Debounce window for file events          |
+| `retry_ms`   | `250`                                    | Retry delay when the plist is unwatchable|
+| `notify`     | `true`                                   | Show informational messages              |
+| `path`       | `~/Library/Preferences/.GlobalPreferences.plist` | Override the watched file     |
+| `callback`   | `nil`                                    | Called on appearance change              |
+
+## API
+
+```lua
+local ma = require "macos-appearance"
+
+ma.get()   -- "dark" | "light"
+ma.sync()  -- detect now and fire callback / event
+ma.start() -- start the file watcher
+ma.stop()  -- stop and release handles
+```
+
+`setup()` calls `sync()` then `start()`. Repeated calls to `setup()` are safe.
+
+## NvChad adapter
+
+A built-in adapter for NvChad Base46 is included. Configure `theme_toggle` in `chadrc.lua`
+(the first theme is light, the second dark):
 
 ```lua
 -- chadrc.lua
 M.base46 = {
   theme = "tokyodark",
-  theme_toggle = {
-    "flexoki-light",
-    "tokyodark",
-  },
+  theme_toggle = { "flexoki-light", "tokyodark" },
 }
 ```
 
-## Installation
+Then pass the adapter as the callback:
 
 ```lua
--- NvChad
 {
   "pzehrel/macos-appearance.nvim",
   event = "UIEnter",
@@ -45,95 +97,23 @@ M.base46 = {
 }
 ```
 
-```lua
--- Any theme framework
-{
-  "pzehrel/macos-appearance.nvim",
-  event = "UIEnter",
-  config = function()
-    require("macos-appearance").setup {
-      callback = function(appearance)
-        vim.cmd.colorscheme(appearance == "dark" and "tokyonight" or "github_light")
-      end,
-    }
-  end,
-}
-```
+`UIEnter` ensures Base46 is initialized before the first sync.
 
-For more control, skip `callback` and listen to the event instead:
-`User MacosAppearanceChanged` with `data = { appearance = "dark" | "light" }`.
-
-`UIEnter` lets Base46 initialize before this plugin synchronizes the theme. `VeryLazy` also works, but may briefly
-display the wrong theme before synchronization.
-
-## Behavior
-
-During `setup()`, the plugin:
-
-1. Detects the current macOS appearance.
-2. Fires `User MacosAppearanceChanged` with `data = { appearance = "dark" | "light" }`.
-3. Calls the `callback` function (if configured).
-4. Starts watching the macOS global preferences plist.
-5. Registers cleanup for `VimLeavePre`.
-
-Automatic theme changes only affect the current Neovim process. The plugin never rewrites `chadrc.lua`.
-
-File events are debounced for 100 milliseconds. Because macOS may atomically replace the preferences plist, the
-plugin discards the old file handle and attaches a new watcher after each event.
-
-## Options
-
-```lua
-require("macos-appearance").setup {
-  debounce_ms = 100,
-  retry_ms = 250,
-  notify = true,
-  callback = require("macos-appearance.adapters.nvchad"),
-}
-```
-
-| Option | Default | Description |
-| --- | ---: | --- |
-| `debounce_ms` | `100` | Delay used to merge consecutive file events |
-| `retry_ms` | `250` | Delay before retrying when the plist cannot be watched |
-| `notify` | `true` | Show informational messages |
-| `path` | macOS global preferences plist | Override the watched file, mainly for testing |
-| `callback` | `nil` | Function or adapter object called on appearance change |
-
-A `callback` can be a plain function `fun(appearance: "dark"|"light")` or an adapter table
-`{ apply = fun(appearance), reset? = fun() }`. Adapter objects receive `reset()` during re-setup
-to clear internal state.
-
-## API
-
-```lua
-local appearance = require "macos-appearance"
-
-appearance.get()   -- "light" or "dark"
-appearance.sync()  -- detect and fire event / callback once
-appearance.start() -- start listening
-appearance.stop()  -- stop and release libuv handles
-```
-
-Repeated calls to `setup()` are safe: the previous watcher is stopped before a new one is created.
-`setup()` returns `started, error`; configuration or platform errors prevent the watcher from starting.
-
-## NvChad adapter
+The adapter exposes `apply(appearance)` and `reset()` for direct use:
 
 ```lua
 local nvchad = require("macos-appearance.adapters.nvchad")
-
-nvchad.apply("dark")   -- apply dark theme and return (changed, error?)
-nvchad.reset()         -- clear internal state before re-setup
+nvchad.apply("dark")  -- switch to dark theme
+nvchad.reset()        -- clear internal state before re-setup
 ```
 
 ## Development
 
 ```sh
-make check
+make check   # format, lint, test
 ```
 
-The test suite runs in headless Neovim and does not change the system appearance or the real preferences plist.
+Tests run in headless Neovim without touching the real preferences plist.
 
 ## License
 
