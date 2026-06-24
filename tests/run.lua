@@ -71,15 +71,14 @@ test("NvChad adapter maps theme_toggle and avoids redundant reloads", function()
 
   local adapter = require "macos-appearance.adapters.nvchad"
 
-  -- Startup: theme already matches the system appearance → fast path.
+  -- Startup: theme already matches → fast path, no reload.
   local changed, err = adapter.apply "light"
   equal(changed, false)
   equal(err, nil)
   equal(loads, 0)
   equal(vim.g.icon_toggled, false)
 
-  -- Reset and apply a different appearance.
-  adapter.reset()
+  -- Different appearance triggers a real apply.
   changed, err = adapter.apply "dark"
   equal(changed, true)
   equal(err, nil)
@@ -104,38 +103,6 @@ test("NvChad adapter maps theme_toggle and avoids redundant reloads", function()
   changed, err = adapter.apply "dark"
   equal(changed, true)
   equal(loads, 3)
-end)
-
-test("NvChad adapter reset() clears the appearance tracker", function()
-  unload "macos-appearance.adapters.nvchad"
-  local loads = 0
-  local base46_config = {
-    theme = "light-theme",
-    theme_toggle = { "light-theme", "dark-theme" },
-  }
-  package.loaded.nvconfig = { base46 = base46_config }
-  package.loaded.base46 = {
-    load_all_highlights = function()
-      loads = loads + 1
-    end,
-  }
-
-  local adapter = require "macos-appearance.adapters.nvchad"
-
-  -- First apply.
-  local changed, _ = adapter.apply "dark"
-  equal(changed, true)
-  equal(loads, 1)
-
-  -- Same appearance → skipped.
-  changed, _ = adapter.apply "dark"
-  equal(changed, false)
-
-  -- After reset, same appearance triggers a fresh apply.
-  adapter.reset()
-  changed, _ = adapter.apply "dark"
-  equal(changed, true)
-  equal(loads, 2)
 end)
 
 test("NvChad adapter reports an invalid theme_toggle", function()
@@ -237,9 +204,6 @@ test("setup synchronizes before starting and repeated setup stops the old watche
     end,
   }
   package.loaded["macos-appearance.adapters.nvchad"] = {
-    reset = function()
-      order[#order + 1] = "reset"
-    end,
     apply = function(value)
       order[#order + 1] = "apply-" .. value
       return true
@@ -261,12 +225,12 @@ test("setup synchronizes before starting and repeated setup stops the old watche
 
   local plugin = require "macos-appearance"
   plugin.setup { notify = false }
-  equal(table.concat(order, ","), "reset,detect,apply-dark,start")
+  equal(table.concat(order, ","), "detect,apply-dark,start")
 
   order = {}
   plugin.setup { notify = false }
   equal(stop_count, 1)
-  equal(table.concat(order, ","), "reset,detect,apply-dark,start")
+  equal(table.concat(order, ","), "detect,apply-dark,start")
   plugin.stop()
 end)
 

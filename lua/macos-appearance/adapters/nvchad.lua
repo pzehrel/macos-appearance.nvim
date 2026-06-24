@@ -32,13 +32,11 @@ local function update_icon(base46, theme)
   vim.g.toggle_theme_icon = dark and "   " or "   "
 end
 
----Apply the NvChad theme associated with a macOS appearance.
+---Apply the NvChad theme for a given macOS appearance.
 ---
----Instead of calling load_all_highlights (which triggers reload_module →
----cascade → chadrc.lua write), manually compiles and applies highlights
----directly.  Only modifies nvconfig.base46 in memory; never touches
----chadrc.lua.  Manual theme toggles are left to NvChad's native
----toggle_theme.
+---Same approach as NvChad's built-in reload_theme: temporarily sets
+---base46.theme, calls load_all_highlights, then restores the original
+---value.  chadrc.lua is never modified.
 ---
 ---@param appearance "dark"|"light"
 ---@return boolean changed
@@ -88,12 +86,6 @@ function M.apply(appearance)
   last_appearance = appearance
 
   return true
-end
-
----Reset the internal appearance tracker so that the next apply() call
----performs a full sync regardless of the last applied appearance.
-function M.reset()
-  last_appearance = nil
 end
 
 return M
