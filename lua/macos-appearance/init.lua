@@ -1,5 +1,4 @@
 local appearance = require "macos-appearance.appearance"
-local nvchad = require "macos-appearance.adapters.nvchad"
 local watcher = require "macos-appearance.watcher"
 
 local M = {}
@@ -8,7 +7,6 @@ local defaults = {
   debounce_ms = 100,
   retry_ms = 250,
   path = vim.fn.expand "~/Library/Preferences/.GlobalPreferences.plist",
-  adapter = nvchad,
   notify = true,
 }
 
@@ -31,7 +29,7 @@ function M.get()
   return appearance.get()
 end
 
----Detect and apply the current macOS appearance.
+---Detect and fire User MacosAppearanceChanged if the appearance changed.
 ---@return boolean changed
 ---@return string? error
 function M.sync()
@@ -45,14 +43,13 @@ function M.sync()
     return false
   end
 
-  local changed, apply_err = state.options.adapter.apply(current)
-  if apply_err then
-    notify(apply_err)
-    return false, apply_err
-  end
-
   state.appearance = current
-  return changed
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "MacosAppearanceChanged",
+    data = { appearance = current },
+  })
+
+  return true
 end
 
 ---Start watching the macOS global preferences file.
@@ -88,7 +85,6 @@ end
 ---@field debounce_ms? integer
 ---@field retry_ms? integer
 ---@field path? string
----@field adapter? table
 ---@field notify? boolean
 
 ---Synchronize once, then start listening for changes.
@@ -100,22 +96,23 @@ function M.setup(opts)
   state.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
   state.appearance = nil
 
-  -- Reset the adapter's internal tracker so that re-setup forces a
-  -- full sync even when the system appearance hasn't changed.
-  if type(state.options.adapter.reset) == "function" then
-    state.options.adapter.reset()
+  local group = vim.api.nvim_create_augroup("MacosAppearance", { clear = true })
+
+  -- Register the NvChad adapter as an event listener if available.
+  local ok, nvchad = pcall(require, "macos-appearance.adapters.nvchad")
+  if ok and nvchad.listen then
+    nvchad.listen(group)
   end
+
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = group,
+    callback = M.stop,
+  })
 
   local _, sync_err = M.sync()
   if sync_err then
     return false, sync_err
   end
-
-  local group = vim.api.nvim_create_augroup("MacosAppearance", { clear = true })
-  vim.api.nvim_create_autocmd("VimLeavePre", {
-    group = group,
-    callback = M.stop,
-  })
 
   return M.start()
 end

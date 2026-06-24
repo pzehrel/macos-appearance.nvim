@@ -88,4 +88,18 @@ function M.apply(appearance)
   return true
 end
 
+---Register this adapter as a listener for MacosAppearanceChanged events.
+---Called automatically by setup(); users who want a custom adapter should
+---not call this and instead register their own autocmd handler.
+---@param group integer augroup id
+function M.listen(group)
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "MacosAppearanceChanged",
+    callback = function(ev)
+      M.apply(ev.data.appearance)
+    end,
+  })
+end
+
 return M

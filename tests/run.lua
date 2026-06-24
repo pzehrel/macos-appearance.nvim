@@ -196,6 +196,7 @@ test("setup synchronizes before starting and repeated setup stops the old watche
   unload "macos-appearance"
   local order = {}
   local stop_count = 0
+  local events = {}
 
   package.loaded["macos-appearance.appearance"] = {
     get = function()
@@ -203,10 +204,17 @@ test("setup synchronizes before starting and repeated setup stops the old watche
       return "dark"
     end,
   }
+  -- Mock adapter that registers itself as an event listener.
   package.loaded["macos-appearance.adapters.nvchad"] = {
-    apply = function(value)
-      order[#order + 1] = "apply-" .. value
-      return true
+    listen = function(group)
+      order[#order + 1] = "adapter-listen"
+      vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "MacosAppearanceChanged",
+        callback = function(ev)
+          events[#events + 1] = ev.data.appearance
+        end,
+      })
     end,
   }
   package.loaded["macos-appearance.watcher"] = {
@@ -225,12 +233,16 @@ test("setup synchronizes before starting and repeated setup stops the old watche
 
   local plugin = require "macos-appearance"
   plugin.setup { notify = false }
-  equal(table.concat(order, ","), "detect,apply-dark,start")
+  -- setup() registers adapter listener, syncs, then starts watching.
+  equal(table.concat(order, ","), "adapter-listen,detect,start")
+  equal(events[1], "dark")
 
   order = {}
+  events = {}
   plugin.setup { notify = false }
   equal(stop_count, 1)
-  equal(table.concat(order, ","), "detect,apply-dark,start")
+  equal(table.concat(order, ","), "adapter-listen,detect,start")
+  equal(events[1], "dark")
   plugin.stop()
 end)
 
