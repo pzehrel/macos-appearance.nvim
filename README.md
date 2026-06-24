@@ -32,9 +32,8 @@ M.base46 = {
 
 ## Installation
 
-### NvChad (built-in adapter)
-
 ```lua
+-- NvChad
 {
   "pzehrel/macos-appearance.nvim",
   event = "UIEnter",
@@ -46,9 +45,8 @@ M.base46 = {
 }
 ```
 
-### Custom theme framework
-
 ```lua
+-- Any theme framework
 {
   "pzehrel/macos-appearance.nvim",
   event = "UIEnter",
@@ -62,24 +60,8 @@ M.base46 = {
 }
 ```
 
-### Event-based
-
-```lua
-{
-  "pzehrel/macos-appearance.nvim",
-  event = "UIEnter",
-  config = function()
-    require("macos-appearance").setup()
-
-    vim.api.nvim_create_autocmd("User", {
-      pattern = "MacosAppearanceChanged",
-      callback = function(ev)
-        -- ev.data.appearance → "dark" | "light"
-      end,
-    })
-  end,
-}
-```
+For more control, skip `callback` and listen to the event instead:
+`User MacosAppearanceChanged` with `data = { appearance = "dark" | "light" }`.
 
 `UIEnter` lets Base46 initialize before this plugin synchronizes the theme. `VeryLazy` also works, but may briefly
 display the wrong theme before synchronization.

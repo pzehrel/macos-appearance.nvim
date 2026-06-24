@@ -32,9 +32,8 @@ M.base46 = {
 
 ## 安装
 
-### NvChad（内置适配器）
-
 ```lua
+-- NvChad
 {
   "pzehrel/macos-appearance.nvim",
   event = "UIEnter",
@@ -46,9 +45,8 @@ M.base46 = {
 }
 ```
 
-### 自定义配色方案
-
 ```lua
+-- 任意配色方案
 {
   "pzehrel/macos-appearance.nvim",
   event = "UIEnter",
@@ -62,24 +60,8 @@ M.base46 = {
 }
 ```
 
-### 纯事件模式
-
-```lua
-{
-  "pzehrel/macos-appearance.nvim",
-  event = "UIEnter",
-  config = function()
-    require("macos-appearance").setup()
-
-    vim.api.nvim_create_autocmd("User", {
-      pattern = "MacosAppearanceChanged",
-      callback = function(ev)
-        -- ev.data.appearance → "dark" | "light"
-      end,
-    })
-  end,
-}
-```
+如需更细粒度的控制，不传 `callback`，直接监听事件：
+`User MacosAppearanceChanged`，`data = { appearance = "dark" | "light" }`。
 
 `UIEnter` 等待初始化后再同步主题。也可以使用 `VeryLazy`，但 Neovim 启动时可能短暂显示错误的主题。
 
