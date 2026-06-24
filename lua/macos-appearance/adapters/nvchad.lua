@@ -1,67 +1,10 @@
 local M = {}
 
--- Module-level state ---------------------------------------------------
+-- Track which appearance was last applied by the plugin so that
+-- redundant apply() calls (same appearance twice in a row) can be
+-- short-circuited without relying on base46.theme (which the plugin
+-- restores after each apply to keep nvconfig in sync with chadrc.lua).
 local last_appearance = nil
-local saved_replace_word = nil
-local chadrc_path = vim.fn.stdpath("config") .. "/lua/chadrc.lua"
-
--- DIAGNOSTIC: watch chadrc.lua for ANY modification, independent of mechanism
-local function start_chadrc_watcher()
-  local mtime = vim.uv.fs_stat(chadrc_path) and vim.uv.fs_stat(chadrc_path).mtime.sec or 0
-  -- Log the initial state so we know mtime at plugin load
-  vim.notify(
-    string.format("chadrc.lua mtime at plugin load: %d", mtime),
-    vim.log.levels.INFO,
-    { title = "macos-appearance: INIT" }
-  )
-
-  -- Poll every 500ms to detect changes (fs_event on Lua files is unreliable on macOS)
-  vim.uv.new_timer():start(0, 500, function()
-    local stat = vim.uv.fs_stat(chadrc_path)
-    local new_mtime = stat and stat.mtime.sec or 0
-    if new_mtime ~= mtime and new_mtime > 0 then
-      local trace = debug.traceback("chadrc.lua MODIFIED", 2)
-      vim.notify(
-        string.format("mtime %d → %d\n%s", mtime, new_mtime, trace),
-        vim.log.levels.ERROR,
-        { title = "macos-appearance: FILE CHANGED" }
-      )
-      mtime = new_mtime
-    end
-  end)
-end
-
-start_chadrc_watcher()
-
--- Replace-word guard ----------------------------------------------------
-
-local function install_replace_word_guard()
-  if saved_replace_word == nil then
-    local ok, utils = pcall(require, "nvchad.utils")
-    if ok and type(utils.replace_word) == "function" then
-      saved_replace_word = utils.replace_word
-    end
-  end
-
-  local ok, utils = pcall(require, "nvchad.utils")
-  if ok then
-    -- DIAGNOSTIC: permanently block replace_word to determine whether
-    -- chadrc.lua writes go through this function or bypass it.
-    utils.replace_word = function(...)
-      local args = { ... }
-      local msg = string.format(
-        "BLOCKED at %.3fs | old=%s new=%s file=%s",
-        vim.uv.hrtime() / 1e9,
-        tostring(args[1] or "nil"):sub(1, 80),
-        tostring(args[2] or "nil"):sub(1, 80),
-        tostring(args[3] or "nil"):sub(1, 80)
-      )
-      vim.notify(msg, vim.log.levels.WARN, { title = "macos-appearance: replace_word BLOCKED" })
-    end
-  end
-end
-
--- Configuration ---------------------------------------------------------
 
 local function config()
   local ok, nvconfig = pcall(require, "nvconfig")
@@ -89,16 +32,13 @@ local function update_icon(base46, theme)
   vim.g.toggle_theme_icon = dark and "   " or "   "
 end
 
--- Public API ------------------------------------------------------------
-
 ---Apply the NvChad theme associated with a macOS appearance.
 ---
----Temporarily sets base46.theme to the system-matching theme while
----highlights are compiled and applied, then restores the original
----value so that nvconfig.base46 always reflects chadrc.lua.
----During the operation replace_word is guarded to prevent any code
----path (toggle_theme, autocmd cascade, etc.) from writing to chadrc.lua.
----Manual theme toggles are left to NvChad's native toggle_theme.
+---Instead of calling load_all_highlights (which triggers reload_module →
+---cascade → chadrc.lua write), manually compiles and applies highlights
+---directly.  Only modifies nvconfig.base46 in memory; never touches
+---chadrc.lua.  Manual theme toggles are left to NvChad's native
+---toggle_theme.
 ---
 ---@param appearance "dark"|"light"
 ---@return boolean changed
@@ -108,7 +48,6 @@ function M.apply(appearance)
     return false, "appearance must be 'dark' or 'light'"
   end
 
-  -- System appearance unchanged since last plugin-triggered apply.
   if last_appearance == appearance then
     return false
   end
@@ -121,72 +60,55 @@ function M.apply(appearance)
   local theme = appearance == "dark" and base46.theme_toggle[2] or base46.theme_toggle[1]
   update_icon(base46, theme)
 
-  -- Startup fast-path: the user's configured theme already matches the
-  -- system appearance — no need to recompile highlights.
+  -- Startup fast-path: already matching, no reload needed.
   if last_appearance == nil and base46.theme == theme then
     last_appearance = appearance
     return false
   end
 
-  -- Block any file writes to chadrc.lua while we temporarily modify
-  -- base46.theme for highlight compilation.  load_all_highlights
-  -- internally reloads the base46 module, triggering downstream
-  -- callbacks that may reach toggle_theme → replace_word.
-  -- DIAGNOSTIC: guard is NOT restored — stays permanent.
-  install_replace_word_guard()
-
-  -- Log mtime before apply to compare with watcher notifications
-  local stat_before = vim.uv.fs_stat(chadrc_path)
-  local mtime_before = stat_before and stat_before.mtime.sec or 0
-
   local previous = base46.theme
   base46.theme = theme
 
   local ok, base46_module = pcall(require, "base46")
-  if not ok or type(base46_module.load_all_highlights) ~= "function" then
+  if not ok then
     base46.theme = previous
     return false, "NvChad base46 module is unavailable"
   end
 
+  -- Call load_all_highlights normally, but temporarily disable its
+  -- internal reload_module("base46") which clears the module cache
+  -- and triggers downstream callbacks that write to chadrc.lua.
+  local ok_reload, plenary_reload = pcall(require, "plenary.reload")
+  local saved_reload
+  if ok_reload and plenary_reload.reload_module then
+    saved_reload = plenary_reload.reload_module
+    plenary_reload.reload_module = function(name, ...)
+      if name ~= "base46" then
+        return saved_reload(name, ...)
+      end
+    end
+  end
+
   local loaded, load_err = pcall(base46_module.load_all_highlights)
+
+  if saved_reload then
+    plenary_reload.reload_module = saved_reload
+  end
+
   if not loaded then
     base46.theme = previous
     return false, tostring(load_err)
   end
 
-  -- Highlights are applied via compiled cache files.  Restore the
-  -- original theme so that nvconfig stays in sync with chadrc.lua.
+  -- Restore original theme so nvconfig stays in sync with chadrc.lua.
   base46.theme = previous
   last_appearance = appearance
-
-  -- Check if chadrc.lua was modified during load_all_highlights
-  local stat_after = vim.uv.fs_stat(chadrc_path)
-  local mtime_after = stat_after and stat_after.mtime.sec or 0
-  if mtime_after ~= mtime_before then
-    vim.notify(
-      string.format("CHANGED during apply! mtime %d → %d", mtime_before, mtime_after),
-      vim.log.levels.ERROR,
-      { title = "macos-appearance: DURING APPLY" }
-    )
-  end
-
-  -- DIAGNOSTIC: replace_word guard is NOT restored — it stays permanent.
-  -- If chadrc.lua is still modified after this, the write bypasses
-  -- replace_word entirely (io.open, shell command, etc.).
-  vim.notify(
-    "applied " .. appearance .. " | replace_word PERMANENTLY blocked",
-    vim.log.levels.INFO,
-    { title = "macos-appearance" }
-  )
 
   return true
 end
 
 ---Reset the internal appearance tracker so that the next apply() call
 ---performs a full sync regardless of the last applied appearance.
----
----Call this when the adapter state may be stale (e.g. after a plugin
----re-setup or chadrc.lua was edited externally).
 function M.reset()
   last_appearance = nil
 end
