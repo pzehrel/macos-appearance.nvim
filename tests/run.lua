@@ -87,7 +87,7 @@ test("NvChad adapter maps theme_toggle and avoids redundant reloads", function()
   equal(vim.g.icon_toggled, true)
 
   -- Same appearance again is a no-op (tracked by last_appearance).
-  changed, err = adapter.apply "dark"
+  changed = adapter.apply "dark"
   equal(changed, false)
   equal(loads, 1)
 
@@ -100,7 +100,7 @@ test("NvChad adapter maps theme_toggle and avoids redundant reloads", function()
   equal(vim.g.icon_toggled, false)
 
   -- Back to dark — still works after a different appearance.
-  changed, err = adapter.apply "dark"
+  changed = adapter.apply "dark"
   equal(changed, true)
   equal(loads, 3)
 end)
